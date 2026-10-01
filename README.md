@@ -19,6 +19,7 @@ A lightweight, borderless desktop widget for Windows that shows your PC's real-t
 - **Smart total** — uses a real PSU sensor or battery discharge rate when available; otherwise estimates wall power from component sum + configurable baseline and PSU efficiency
 - **Unintrusive** — borderless, draggable, always-on-top (toggleable), rounded corners, dark theme, tray icon with a tooltip summary
 - **Background mode** — closing the window hides it to the tray while monitoring and energy tracking continue; quit via right-click → 退出
+- **Launch at login** — right-click → 开机自启动 toggles a Task Scheduler entry (highest privileges), which is the only reliable way to auto-start an elevated app
 
 ### Requirements
 
@@ -84,6 +85,7 @@ MIT (see [LICENSE](LICENSE)). LibreHardwareMonitorLib is licensed separately und
 - **智能整机功率**：有电源或电池传感器时用实测值；否则按"（组件合计 + 基础功耗）÷ 电源效率"估算墙插功率，参数可调
 - **不打扰**：无边框可拖动、可置顶、深色主题、托盘图标悬停显示摘要
 - **后台运行**：点 × 关窗只是最小化到托盘，监控与能耗累计不中断；真正退出用右键菜单“退出”
+- **开机自启动**：右键菜单一键开关。因程序需要管理员权限（注册表 Run 键无法自启提权程序），实现方式是创建“登录时以最高权限运行”的计划任务
 
 ### 运行要求
 

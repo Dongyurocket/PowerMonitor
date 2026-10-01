@@ -76,7 +76,7 @@ public sealed class MainForm : Form
     private float _maxTotal = 1;
     private Point? _dragStart;
     private bool _pressClose, _hoverClose;
-    private bool _reallyExit, _trayHintShown;
+    private bool _reallyExit, _trayHintShown, _syncingMenu;
 
     private static readonly Color Bg = Color.FromArgb(24, 26, 31);
     private static readonly Color Fg = Color.FromArgb(230, 232, 236);
@@ -172,6 +172,17 @@ public sealed class MainForm : Form
         top.CheckedChanged += (_, _) => { TopMost = _cfg.TopMost = top.Checked; _cfg.Save(); };
         m.Items.Add("显示 / 隐藏", null, (_, _) => ToggleVisible());
         m.Items.Add(top);
+        var auto = new ToolStripMenuItem("开机自启动") { Checked = QueryAutoStart(), CheckOnClick = true };
+        auto.CheckedChanged += (_, _) =>
+        {
+            if (_syncingMenu) return;
+            if (!SetAutoStart(auto.Checked))
+            {
+                _syncingMenu = true; auto.Checked = !auto.Checked; _syncingMenu = false;
+                MessageBox.Show(this, "开机自启动设置失败，请确认以管理员身份运行。", "功耗监控");
+            }
+        };
+        m.Items.Add(auto);
         m.Items.Add("整机估算设置...", null, (_, _) => ShowSettings());
         m.Items.Add("重置峰值", null, (_, _) => { _peak.Clear(); _maxTotal = 1; });
         m.Items.Add("清零累计能耗", null, (_, _) =>
@@ -475,6 +486,38 @@ public sealed class MainForm : Form
             g.DrawString(text, f, Brushes.Black, new RectangleF(0, 1, 32, 32), sf);
         }
         return Icon.FromHandle(bmp.GetHicon());
+    }
+
+    // 开机自启动：因程序要求管理员权限，注册表 Run 键会被系统拦截，
+    // 故使用计划任务（登录时以最高权限运行）。
+    private const string TaskName = "PowerMonitor";
+
+    private static bool SetAutoStart(bool enable)
+    {
+        try
+        {
+            var exe = Environment.ProcessPath ?? Application.ExecutablePath;
+            string args = enable
+                ? $"/Create /TN {TaskName} /TR \"\\\"{exe}\\\"\" /SC ONLOGON /RL HIGHEST /F"
+                : $"/Delete /TN {TaskName} /F";
+            var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("schtasks", args)
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            p!.WaitForExit(10000);
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
+    }
+
+    private static bool QueryAutoStart()
+    {
+        try
+        {
+            var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("schtasks", $"/Query /TN {TaskName}")
+            { CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true });
+            p!.WaitForExit(10000);
+            return p.ExitCode == 0;
+        }
+        catch { return false; }
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
