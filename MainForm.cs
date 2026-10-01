@@ -76,6 +76,7 @@ public sealed class MainForm : Form
     private float _maxTotal = 1;
     private Point? _dragStart;
     private bool _pressClose, _hoverClose;
+    private bool _reallyExit, _trayHintShown;
 
     private static readonly Color Bg = Color.FromArgb(24, 26, 31);
     private static readonly Color Fg = Color.FromArgb(230, 232, 236);
@@ -181,7 +182,7 @@ public sealed class MainForm : Form
             _energy.Save();
         });
         m.Items.Add(new ToolStripSeparator());
-        m.Items.Add("退出", null, (_, _) => Close());
+        m.Items.Add("退出", null, (_, _) => { _reallyExit = true; Close(); });
         return m;
     }
 
@@ -478,6 +479,18 @@ public sealed class MainForm : Form
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        // 用户点 × 关闭时只隐藏窗口，后台继续监控；右键菜单“退出”才真正退出
+        if (!_reallyExit && e.CloseReason == CloseReason.UserClosing)
+        {
+            e.Cancel = true;
+            Visible = false;
+            if (!_trayHintShown)
+            {
+                _trayHintShown = true;
+                _tray.ShowBalloonTip(2500, "功耗监控", "已转入后台运行。\n左键托盘图标恢复窗口，右键菜单退出。", ToolTipIcon.Info);
+            }
+            return;
+        }
         _timer.Stop();
         _energy.Save();
         _tray.Visible = false;
