@@ -229,6 +229,7 @@ public sealed class MainForm : Form
         var tip = $"整机 {_total:0} W";
         foreach (var i in _items.Where(i => i.Kind is "CPU" or "GPU")) tip += $"\n{i.Kind} {i.Watts:0} W";
         tip += $"\n今日 {FormatEnergy(_energy.TodayWh)}";
+        tip += $"\n累计 {FormatEnergy(_energy.TotalWh)}（自{_energy.Since:M/d}）";
         _tray.Text = tip.Length > 127 ? tip[..127] : tip;
         Invalidate();
     }
@@ -353,7 +354,7 @@ public sealed class MainForm : Form
         {
             ("本次", _sessionWh),
             ("今日", _energy.TodayWh),
-            ($"累计 自{_energy.Since:M/d}", _energy.TotalWh),
+            ("累计", _energy.TotalWh),
         };
         float cw = (w - pad * 2) / 3f;
         for (int c = 0; c < cols.Length; c++)
