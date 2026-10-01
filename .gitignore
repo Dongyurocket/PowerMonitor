@@ -1,0 +1,14 @@
+# Build output
+bin/
+obj/
+dist*/
+
+# IDE / tooling
+.vs/
+.claude/
+*.user
+
+# Runtime-generated data (per-machine, private)
+settings.json
+energy.json
+sensors.txt
