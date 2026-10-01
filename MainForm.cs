@@ -54,7 +54,9 @@ public sealed class EnergyStore
 
 public sealed class MainForm : Form
 {
+    // 逻辑像素常量（96 DPI 基准），实际绘制统一乘 _scale
     private const int W = 300, Pad = 12, RowH = 28, HeaderH = 96, GraphH = 48, EnergyH = 52, HistoryLen = 120;
+    private float _scale = 1f;
 
     private readonly EnergyStore _energy = EnergyStore.Load();
     private readonly System.Diagnostics.Stopwatch _clock = System.Diagnostics.Stopwatch.StartNew();
@@ -97,7 +99,9 @@ public sealed class MainForm : Form
     private readonly Font _fRow = new("Microsoft YaHei UI", 9f);
     private readonly Font _fVal = new("Consolas", 10f, FontStyle.Bold);
 
-    private Rectangle CloseRect => new(W - Pad - 17, 11, 16, 16);
+    private int S(int v) => (int)Math.Round(v * _scale);
+    private float S(float v) => v * _scale;
+    private Rectangle CloseRect => new(S(W) - S(Pad) - S(17), S(11), S(16), S(16));
 
     public MainForm()
     {
@@ -109,9 +113,10 @@ public sealed class MainForm : Form
         TopMost = _cfg.TopMost;
         StartPosition = FormStartPosition.Manual;
         Icon = MakeIcon("W");
+        _scale = DeviceDpi / 96f;   // 访问 DeviceDpi 会确保句柄已创建
         var wa = Screen.PrimaryScreen!.WorkingArea;
-        Location = _cfg.X >= 0 ? new Point(_cfg.X, _cfg.Y) : new Point(wa.Right - W - 20, wa.Top + 20);
-        Size = new Size(W, HeaderH + GraphH + EnergyH + RowH + Pad);
+        Location = _cfg.X >= 0 ? new Point(_cfg.X, _cfg.Y) : new Point(wa.Right - S(W) - 20, wa.Top + 20);
+        Size = new Size(S(W), S(HeaderH) + S(GraphH) + S(EnergyH) + S(RowH) + S(Pad));
         TryRoundCorners();
 
         ContextMenuStrip = BuildMenu();
@@ -150,6 +155,13 @@ public sealed class MainForm : Form
         _timer.Tick += (_, _) => Tick();
         _timer.Start();
         Tick();
+    }
+
+    protected override void OnDpiChanged(DpiChangedEventArgs e)
+    {
+        base.OnDpiChanged(e);
+        _scale = e.DeviceDpiNew / 96f;
+        Tick(); // 重新计算窗口高度并重绘
     }
 
     private ContextMenuStrip BuildMenu()
@@ -210,8 +222,9 @@ public sealed class MainForm : Form
             _peak[i.Key] = Math.Max(_peak.GetValueOrDefault(i.Key), i.Watts);
 
         int rows = _items.Count(i => i.Kind is not ("PSU" or "BAT"));
-        int h = HeaderH + GraphH + EnergyH + Math.Max(rows, 1) * RowH + Pad;
+        int h = S(HeaderH) + S(GraphH) + S(EnergyH) + Math.Max(rows, 1) * S(RowH) + S(Pad);
         if (Height != h) Height = h;
+        if (Width != S(W)) Width = S(W);
 
         var tip = $"整机 {_total:0} W";
         foreach (var i in _items.Where(i => i.Kind is "CPU" or "GPU")) tip += $"\n{i.Kind} {i.Watts:0} W";
@@ -227,13 +240,13 @@ public sealed class MainForm : Form
         // 核显功耗已包含在 CPU Package 内，避免重复计入
         _componentSum = _items.Where(i => i.Kind is not ("PSU" or "BAT") && !IsIntegratedGpu(i)).Sum(i => i.Watts);
 
-        if (psu != null) { _total = psu.Watts; _totalSource = "电源传感器实测"; }
+        if (psu != null) { _total = psu.Watts; _totalSource = "电源实测"; }
         else if (bat != null && SystemInformation.PowerStatus.PowerLineStatus == PowerLineStatus.Offline)
         { _total = bat.Watts; _totalSource = "电池放电实测"; }
         else
         {
             _total = (_componentSum + _cfg.BaselineWatts) / (_cfg.PsuEfficiency / 100f);
-            _totalSource = $"估算 · 墙插功率 (基础{_cfg.BaselineWatts}W, 效率{_cfg.PsuEfficiency}%)";
+            _totalSource = $"估算 · 基础{_cfg.BaselineWatts}W · 效率{_cfg.PsuEfficiency}%";
         }
     }
 
@@ -247,66 +260,73 @@ public sealed class MainForm : Form
         g.SmoothingMode = SmoothingMode.AntiAlias;
         g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
 
+        int pad = S(Pad), w = S(W);
+        int headerH = S(HeaderH), graphH = S(GraphH), energyH = S(EnergyH), rowH = S(RowH);
+
         void DrawStat(float y, string label, string value)
         {
             var vw = g.MeasureString(value, _fSmall).Width;
             var lw = g.MeasureString(label, _fSmall).Width;
-            g.DrawString(value, _fSmall, new SolidBrush(Fg), W - Pad - vw, y);
-            g.DrawString(label, _fSmall, new SolidBrush(Dim), W - Pad - vw - lw - 4, y);
+            g.DrawString(value, _fSmall, new SolidBrush(Fg), w - pad - vw, y);
+            g.DrawString(label, _fSmall, new SolidBrush(Dim), w - pad - vw - lw - S(4), y);
         }
 
         // 圆角边框
-        using (var bp = RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), 9))
+        using (var bp = RoundRect(new RectangleF(0.5f, 0.5f, Width - 1.5f, Height - 1.5f), S(9)))
         using (var pen = new Pen(Hairline))
             g.DrawPath(pen, bp);
 
         // ── 头部 ──
         using (var b = new SolidBrush(Color.FromArgb(72, 187, 120)))
-            g.FillEllipse(b, Pad, Pad + 3, 6, 6);                       // 运行状态点
-        g.DrawString("整机功耗", _fSmall, new SolidBrush(Dim), Pad + 10, Pad - 1);
+            g.FillEllipse(b, pad, pad + S(3), S(6), S(6));              // 运行状态点
+        g.DrawString("整机功耗", _fSmall, new SolidBrush(Dim), pad + S(10), pad - S(1));
 
         var cr = CloseRect;
-        using (var path = RoundRect(cr, 4))
+        using (var path = RoundRect(cr, S(4)))
         using (var b = new SolidBrush(_hoverClose ? Color.FromArgb(197, 78, 78) : Color.FromArgb(42, 46, 54)))
             g.FillPath(b, path);
         g.DrawString("×", _fRow, new SolidBrush(_hoverClose ? Color.White : Dim), cr,
             new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center });
 
+        // 大数字，"W" 单位与数字底边对齐
         string totalTxt = $"{_total:0}";
-        g.DrawString(totalTxt, _fBig, new SolidBrush(Accent), Pad - 3, Pad + 15);
+        float bigY = pad + S(15);
+        g.DrawString(totalTxt, _fBig, new SolidBrush(Accent), pad - S(3), bigY);
         var tw = g.MeasureString(totalTxt, _fBig);
-        g.DrawString("W", _fRow, new SolidBrush(Dim), Pad - 3 + tw.Width - 4, Pad + 40);
+        float unitY = bigY + _fBig.GetHeight(g) - _fRow.GetHeight(g);
+        g.DrawString("W", _fRow, new SolidBrush(Dim), pad - S(3) + tw.Width - S(4), unitY);
 
-        DrawStat(Pad + 22, "峰值", $"{_maxTotal:0} W");
-        DrawStat(Pad + 39, "组件", $"{_componentSum:0} W");
+        DrawStat(pad + S(22), "峰值", $"{_maxTotal:0} W");
+        DrawStat(pad + S(39), "组件", $"{_componentSum:0} W");
 
-        // 数据来源 chip
+        // 数据来源 chip（文字垂直居中，超宽省略号）
         var sw = g.MeasureString(_totalSource, _fSmall);
-        var chipRect = new RectangleF(Pad, Pad + 58, Math.Min(sw.Width + 12, W - Pad * 2), 17);
-        using (var path = RoundRect(chipRect, 8))
+        var chipRect = new RectangleF(pad, pad + S(60), Math.Min(sw.Width + S(12), w - pad * 2), S(17));
+        using (var path = RoundRect(chipRect, S(8)))
         using (var b = new SolidBrush(Track))
             g.FillPath(b, path);
         g.DrawString(_totalSource, _fSmall, new SolidBrush(Dim),
-            new RectangleF(Pad + 6, Pad + 60, chipRect.Width - 10, 14),
+            new RectangleF(pad + S(6), chipRect.Y + (chipRect.Height - _fSmall.GetHeight(g)) / 2, chipRect.Width - S(10), _fSmall.GetHeight(g)),
             new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap });
 
         // ── 历史曲线 ──
-        var gr = new Rectangle(Pad, HeaderH, W - Pad * 2, GraphH);
-        using (var path = RoundRect(gr, 6))
+        var gr = new Rectangle(pad, headerH, w - pad * 2, graphH);
+        using (var path = RoundRect(gr, S(6)))
         using (var b = new SolidBrush(Track))
             g.FillPath(b, path);
         using (var pen = new Pen(Hairline))
-            g.DrawLine(pen, gr.Left + 4, gr.Top + gr.Height / 2f, gr.Right - 4, gr.Top + gr.Height / 2f);
+            g.DrawLine(pen, gr.Left + S(4), gr.Top + gr.Height / 2f, gr.Right - S(4), gr.Top + gr.Height / 2f);
+        g.DrawString("近 2 分钟", _fSmall, new SolidBrush(Color.FromArgb(90, Dim)), gr.Left + S(7), gr.Top + S(4));
         if (_history.Count > 1)
         {
             var arr = _history.ToArray();
             float max = Math.Max(arr.Max() * 1.15f, 10);
             float step = gr.Width / (float)(HistoryLen - 1);
             float x0 = gr.Right - (arr.Length - 1) * step;
-            var pts = arr.Select((v, i) => new PointF(x0 + i * step, gr.Bottom - 4 - v / max * (gr.Height - 10))).ToList();
+            var pts = arr.Select((v, i) => new PointF(x0 + i * step, gr.Bottom - S(4) - v / max * (gr.Height - S(10)))).ToList();
 
             var oldClip = g.Clip;
-            using (var cpath = RoundRect(gr, 6))
+            using (var cpath = RoundRect(gr, S(6)))
                 g.SetClip(cpath);
             using (var fill = new GraphicsPath())
             {
@@ -317,72 +337,72 @@ public sealed class MainForm : Form
                 using var lg = new LinearGradientBrush(gr, Color.FromArgb(70, Accent), Color.FromArgb(6, Accent), LinearGradientMode.Vertical);
                 g.FillPath(lg, fill);
             }
-            using (var pen = new Pen(Accent, 1.6f) { LineJoin = LineJoin.Round })
+            using (var pen = new Pen(Accent, S(1.6f)) { LineJoin = LineJoin.Round })
             {
                 if (pts.Count > 2) g.DrawCurve(pen, pts.ToArray(), 0.5f);
                 else g.DrawLines(pen, pts.ToArray());
             }
             g.Clip = oldClip;
             using (var b = new SolidBrush(Accent))
-                g.FillEllipse(b, pts[^1].X - 2.5f, pts[^1].Y - 2.5f, 5, 5);  // 最新值亮点
+                g.FillEllipse(b, pts[^1].X - S(2.5f), pts[^1].Y - S(2.5f), S(5), S(5));  // 最新值亮点
         }
 
         // ── 能耗累计：本次 / 今日 / 累计 ──
-        int ey = HeaderH + GraphH + 10;
+        int ey = headerH + graphH + S(10);
         var cols = new[]
         {
             ("本次", _sessionWh),
             ("今日", _energy.TodayWh),
-            ($"累计 · 自{_energy.Since:M/d}", _energy.TotalWh),
+            ($"累计 自{_energy.Since:M/d}", _energy.TotalWh),
         };
-        float cw = (W - Pad * 2) / 3f;
+        float cw = (w - pad * 2) / 3f;
         for (int c = 0; c < cols.Length; c++)
         {
-            float cx = Pad + c * cw;
+            float cx = pad + c * cw;
             if (c > 0)
                 using (var pen = new Pen(Hairline))
-                    g.DrawLine(pen, cx - 7, ey + 2, cx - 7, ey + 32);
+                    g.DrawLine(pen, cx - S(7), ey + S(2), cx - S(7), ey + S(32));
             g.DrawString(cols[c].Item1, _fSmall, new SolidBrush(Dim),
-                new RectangleF(cx, ey, cw - 12, 14),
+                new RectangleF(cx, ey, cw - S(12), S(14)),
                 new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap });
-            g.DrawString(FormatEnergy(cols[c].Item2), _fVal, new SolidBrush(Fg), cx, ey + 16);
+            g.DrawString(FormatEnergy(cols[c].Item2), _fVal, new SolidBrush(Fg), cx, ey + S(16));
         }
 
         // ── 各硬件 ──
-        int y = HeaderH + GraphH + EnergyH;
+        int y = headerH + graphH + energyH;
         var rows = _items.Where(i => i.Kind is not ("PSU" or "BAT")).ToList();
         if (rows.Count == 0)
-            g.DrawString("未读取到功耗传感器，请以管理员身份运行", _fSmall, new SolidBrush(Dim), Pad, y + 6);
+            g.DrawString("未读取到功耗传感器，请以管理员身份运行", _fSmall, new SolidBrush(Dim), pad, y + S(6));
         foreach (var i in rows)
         {
             var col = KindColor[i.Kind];
-            using (var path = RoundRect(new RectangleF(Pad, y + 5, 4, 14), 2))
+            using (var path = RoundRect(new RectangleF(pad, y + S(5), S(4), S(14)), S(2)))
             using (var b = new SolidBrush(col))
                 g.FillPath(b, path);
 
             var val = $"{i.Watts:0.0} W";
             var vw = g.MeasureString(val, _fVal);
-            g.DrawString(val, _fVal, new SolidBrush(col), W - Pad - vw.Width, y + 2);
+            g.DrawString(val, _fVal, new SolidBrush(col), w - pad - vw.Width, y + S(2));
 
             var label = IsIntegratedGpu(i) ? $"{i.Name} (含于CPU)" : i.Name;
             g.DrawString(label, _fRow, new SolidBrush(Fg),
-                new RectangleF(Pad + 11, y + 3, W - Pad * 2 - 11 - vw.Width - 8, 16),
+                new RectangleF(pad + S(11), y + S(3), w - pad * 2 - S(11) - vw.Width - S(8), S(16)),
                 new StringFormat { Trimming = StringTrimming.EllipsisCharacter, FormatFlags = StringFormatFlags.NoWrap });
 
             // 底部细条：当前值 / 本次峰值
             float peak = Math.Max(_peak.GetValueOrDefault(i.Key), 1);
-            var bar = new RectangleF(Pad + 11, y + RowH - 5, W - Pad * 2 - 11, 3);
-            using (var path = RoundRect(bar, 1.5f))
+            var bar = new RectangleF(pad + S(11), y + rowH - S(5), w - pad * 2 - S(11), S(3));
+            using (var path = RoundRect(bar, S(1.5f)))
             using (var b = new SolidBrush(Track))
                 g.FillPath(b, path);
             float fillW = bar.Width * Math.Min(i.Watts / peak, 1);
-            if (fillW > 3)
+            if (fillW > S(3))
             {
-                using var path = RoundRect(new RectangleF(bar.X, bar.Y, fillW, 3), 1.5f);
+                using var path = RoundRect(new RectangleF(bar.X, bar.Y, fillW, S(3)), S(1.5f));
                 using var b = new SolidBrush(col);
                 g.FillPath(b, path);
             }
-            y += RowH;
+            y += rowH;
         }
     }
 
